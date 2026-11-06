@@ -1,0 +1,108 @@
+// prisma/schema.prisma
+
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["multiSchema"]
+}
+
+datasource db {
+  provider = "postgresql"
+  schemas  = ["bi3041557"]
+}
+
+enum StatusFuncionario {
+  ATIVO
+  INATIVO
+
+  @@schema("bi3041557")
+}
+
+// 1. ADICIONADO: Níveis de acesso para a Matriz de Permissões (RBAC)
+enum Role {
+  COLABORADOR
+  GESTOR
+  RH
+  ADMIN
+
+  @@schema("bi3041557")
+}
+
+// 2. AJUSTADO: Estados completos da Máquina de Estados Finita
+enum StatusFerias {
+  RASCUNHO
+  SOLICITADO
+  EM_ANALISE
+  APROVADO
+  RECUSADO
+  CANCELADO
+  PAGO
+
+  @@schema("bi3041557")
+}
+
+model Funcionario {
+  id           String            @id @default(uuid())
+  nome         String
+  email        String            @unique
+  cargo        String
+  role         Role              @default(COLABORADOR) // ADICIONADO: RBAC
+  setor        String            @default("Geral")     // ADICIONADO: Texto simples para validar a regra dos 20%
+  dataAdmissao DateTime          @map("data_admissao")
+  saldoDias    Int               @default(30) @map("saldo_dias")
+  status       StatusFuncionario @default(ATIVO)
+
+  gestorId     String?       @map("gestor_id")
+  gestor       Funcionario?  @relation("GestorSubordinados", fields: [gestorId], references: [id])
+  subordinados Funcionario[] @relation("GestorSubordinados")
+
+  solicitacoes         SolicitacaoFerias[]
+  historicosExecutados HistoricoSolicitacao[] @relation("AutorHistorico")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("funcionarios")
+  @@schema("bi3041557")
+}
+
+model SolicitacaoFerias {
+  id              String       @id @default(uuid())
+  funcionarioId   String       @map("funcionario_id")
+  funcionario     Funcionario  @relation(fields: [funcionarioId], references: [id])
+
+  dataInicio      DateTime     @map("data_inicio")
+  diasSolicitados Int          @map("dias_solicitados")
+  abonoPecuniario Boolean      @default(false) @map("abono_pecuniario")
+  status          StatusFerias @default(RASCUNHO)
+  motivoRecusa    String?      @map("motivo_recusa")
+
+  // ADICIONADO: Lock de concorrência por versão
+  version         Int          @default(0)
+
+  historicos      HistoricoSolicitacao[]
+
+  createdAt       DateTime     @default(now()) @map("created_at")
+  updatedAt       DateTime     @updatedAt @map("updated_at")
+
+  @@map("solicitacoes_ferias")
+  @@schema("bi3041557")
+}
+
+// 3. ADICIONADO: Tabela Obrigatória de Rastreabilidade / Audit Log
+model HistoricoSolicitacao {
+  id            String            @id @default(uuid())
+  solicitacaoId String            @map("solicitacao_id")
+  solicitacao   SolicitacaoFerias @relation(fields: [solicitacaoId], references: [id], onDelete: Cascade)
+
+  estadoAnterior StatusFerias @map("estado_anterior")
+  novoEstado     StatusFerias @map("novo_estado")
+
+  autorId       String      @map("autor_id")
+  autor         Funcionario @relation("AutorHistorico", fields: [autorId], references: [id])
+
+  justificativa String?
+  timestamp     DateTime    @default(now())
+
+  @@map("historico_solicitacoes")
+  @@schema("bi3041557")
+}
