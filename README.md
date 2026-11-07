@@ -6,9 +6,9 @@ Plataforma corporativa de RH desenvolvida com NestJS/Prisma (Backend) e Next.js/
 
 ```mermaid
 erDiagram
-    FUNCIONARIOS ||--o{ SOLICITACOES_FERIAS : "solicita"
-    FUNCIONARIOS ||--o{ HISTORICO_SOLICITACOES : "executa"
-    SOLICITACOES_FERIAS ||--o{ HISTORICO_SOLICITACOES : "possui"
+    FUNCIONARIOS ||--o{ SOLICITACOES_FERIAS : solicita
+    FUNCIONARIOS ||--o{ HISTORICO_SOLICITACOES : executa
+    SOLICITACOES_FERIAS ||--o{ HISTORICO_SOLICITACOES : possui
 
     FUNCIONARIOS {
         string id PK
