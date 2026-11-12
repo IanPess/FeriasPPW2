@@ -1,53 +1,142 @@
-# AI-LOG.md - Relatório de Uso da IA e Reflexão Crítica
+# AI-LOG.md - Relatório Integral de Uso da IA e Reflexão Crítica
 
-## 1. Visão Geral e Registro de Interações Principais
-Durante a construção do projeto acadêmico de **Aprovação de Férias (Tema 17)**, a Inteligência Artificial foi utilizada como ferramenta de consulta, pair-programming e apoio no design de arquitetura. O desenvolvimento abrangeu a criação da API no backend com **NestJS**, a persistência de dados via **Prisma ORM** integrada ao banco PostgreSQL compartilhado (`bi3041557`), e o desenvolvimento do frontend reativo em **Next.js**.
-
-As consultas à IA focaram em:
-1. Modelagem da **Máquina de Estados Finita** para a entidade de solicitações de férias.
-2. Implementação das regras de negócio complexas sob o padrão **SOLID**.
-3. Garantia de **Integridade ACID**, controle de concorrência (**Optimistic Lock**) e **Rastreabilidade (Audit Log)**.
-4. Resolução de bugs de infraestrutura de banco de dados e sincronização do frontend com a API.
+**Projeto:** Sistema Corporativo de Gestão e Aprovação de Férias (Tema 17)  
+**Aluno:** Ian Pesquero Sales (`bi3041557`)  
+**Disciplina:** Programação para Web II (PPW2) — IFSP Campus Birigui  
+**Stack Tecnológica:** NestJS, Prisma ORM, PostgreSQL (Schema `bi3041557`), Next.js, TypeScript e Tailwind CSS  
 
 ---
 
-## 2. Análise Crítica e Refatorações de Código (AI vs. Implementação Final)
+## 1. Registro Cronológico Completo dos Prompts e Interações
 
-### Caso 1: Gestão de Schemas no PostgreSQL Compartilhado da Faculdade
-- **Prompt Original / Sugestão da IA:** A IA sugeriu comandos padrão de CLI do Prisma, como `npx prisma db push --force-reset` e `npx prisma migrate dev`, para recriar as tabelas no banco de dados.
-- **Falha/Problema Identificado:** No ambiente acadêmico compartilhada do PostgreSQL, a conta de usuário (`bi3041557`) não possui permissões de `SUPERUSER` nem acesso para criar/deletar schemas inteiros. Executar os comandos automáticos causava erros de permissão de sistema (`permission denied`) ou tentava apagar schemas alheios.
-- **Refatoração Aplicada:** A lógica gerada pela IA foi corrigida para a execução direta de Scripts DDL/DML via DBeaver, configurando o caminho explícito `SET search_path TO bi3041557;` antes da criação de `ENUMS`, tabelas e chaves estrangeiras.
+A Inteligência Artificial (Gemini) foi utilizada como parceira de desenvolvimento, arquitetura e depuração ao longo de todo o ciclo de vida do sistema. Abaixo está o registro cronológico integral das perguntas, validações e refinamentos conduzidos pelo aluno:
 
-### Caso 2: Arquitetura SOLID e Isolamento das Guardas de Negócio
-- **Prompt Original / Sugestão da IA:** Na primeira versão do serviço (`ferias.service.ts`), a IA concentrou todas as validações de negócio (mínimo de dias da CLT, saldo do funcionário e teto de ausência da equipe) diretamente no corpo do método `aprovar()` ou `solicitar()`.
-- **Falha/Problema Identificado:** Violação grave do **SRP (Single Responsibility Principle)**, gerando uma classe de serviço gigante ("God Class"), e do **OCP (Open/Closed Principle)**, pois qualquer nova regra de RH exigiria modificar e arriscar quebrar o código core do serviço.
-- **Refatoração Aplicada:**
-  - **LSP (Liskov Substitution):** Criação da interface contrato `TransitionGuard` no diretório `guards/`.
-  - **SRP / OCP:** Criação de classes isoladas `CltFractionGuard` (validação de fracionamento legal e saldo mínimo de 5 dias corridos) e `TeamCapacityGuard` (consulta do limite de 20% de ausências simultâneas por setor). O `FeriasService` passou apenas a injetar e iterar sobre as guardas.
+### Fase 1: Arquitetura de Domínio, Máquina de Estados e Conceitos SOLID
+- **Prompt 1:** *"Mecanismos para Inserir Complexidade Real quero que me explique com base no meu projeto."*
+  - **Objetivo:** Compreender como transformar um CRUD básico em um motor corporativo com Máquina de Estados Finita, RBAC por estado e Guardas de Transição.
+- **Prompt 2:** *"Com base nesse texto de apoio (Máquina de Estados Finita, Transições Restritas, RBAC, Concorrência, SLA, SOLID e Audit Log), me explique sobre o meu projeto, de forma que eu possa entender."*
+  - **Objetivo:** Mapear cada requisito acadêmico diretamente para as entidades e fluxos do domínio de RH/Férias.
+- **Prompt 3 (Síntese Crítica do Aluno):** *"Então basicamente estou protegendo as minhas rotas, em vez de rodar um insert para adicionar, ou um select, vou usar o POST, passando se for para aceitar e usando o id, ainda vou atribuir permissões para os usuários. Antes também de haver uma transição de dados, vou começar a passar por verificadores, e para que não aconteça de vir duas solicitações ao mesmo tempo eu adiciono o campo de versão, também adiciono o cancelamento parcial, para descontar apenas os dias que foram contados, mas não entendi qual princípio do SOLID vou aplicar, e seriam os três, não entendi a parte da rastreabilidade também e não entendi o ACID também."*
+  - **Objetivo:** Validar o entendimento técnico sobre SRP, OCP, LSP, Audit Log imutável e atomicidade transacional.
+- **Prompt 4 (Consolidação Conceitual):** *"Então o SRP, basicamente, cada classe ou módulo é responsável a uma mudança, não deixo tudo em um código só, o OCP garante que não precise alterar o código, apenas coloco uma validação nova se for necessário. Então o Liskov garante que a interface funcione com qualquer classe, independente de ser filha ou não. A rastreabilidade é importante pra caso tenha uma alteração fique registrado. O ACID ou faz ou não faz, garante também que seja válido e commit."*
 
-### Caso 3: Tratamento de Concorrência e Race Conditions (Lock Otimista)
-- **Prompt Original / Sugestão da IA:** As propostas iniciais de endpoints executavam atualizações diretas no banco de dados (`UPDATE solicitacoes SET status = 'APROVADO' WHERE id = ...`).
-- **Falha/Problema Identificado:** Vulnerabilidade a requisições concorrentes. Se dois gestores tentassem aprovar solicitações de colaboradores do mesmo setor no mesmo milissegundo, ambos passavam na validação dos 20%, resultando na extrapolação do limite permitido da equipe.
-- **Refatoração Aplicada:** Adição da coluna `version` (`Int @default(0)`) no `schema.prisma`. O update no NestJS foi modificado para filtrar obrigatoriamente por `{ id, version }` e incrementar a versão (`version: { increment: 1 }`). Se o estado/versão mudar durante o processo, a query bloqueia a sobrescrita inconsistente.
+### Fase 2: Modelagem Relacional e PostgreSQL Compartilhado
+- **Prompt 5:** *"Esse é o meu schema.prisma atual, e agora? O que precisa mudar para se encaixar no projeto?"*
+  - **Objetivo:** Identificar lacunas no schema inicial (ausência de `Role`, estados incompletos no enum `StatusFerias`, falta do campo `setor`, ausência da tabela `historico_solicitacoes` e falta do campo `version` para controle de concorrência).
 
-### Caso 4: Transações ACID e Rastreabilidade Imutável (Audit Log)
-- **Prompt Original / Sugestão da IA:** A IA propôs atualizar o status da solicitação primeiro e, em uma instrução separada fora do contexto transacional, criar o registro de histórico de auditoria.
-- **Falha/Problema Identificado:** Ausência da propriedade de **Atomicidade (A do ACID)**. Se ocorresse uma falha de rede ou queda no banco de dados exatamente entre a atualização e o log, o estado da solicitação mudava, mas a trilha de auditoria era perdida.
-- **Refatoração Aplicada:** Encapsulamento de toda a transição de estado dentro do bloco `this.prisma.$transaction(async (tx) => { ... })`. O desconto do saldo de dias do colaborador, o incremento da `version`, a atualização do `status` e a inserção na tabela `historico_solicitacoes` (com `estadoAnterior`, `novoEstado`, `autorId`, `justificativa` e `timestamp`) acontecem juntos. Se uma etapa falha, todo o bloco sofre `ROLLBACK`.
+### Fase 3: Implementação Backend (NestJS, SOLID e ACID)
+- **Prompt 6:** *"Eu já tenho os arquivos, preciso saber o que teria que mudar para se encaixar no projeto (estrutura de pastas, guards, service e controller)?"*
+  - **Objetivo:** Estruturar a pasta `src/module/ferias/guards/` e refatorar `ferias.service.ts`, `ferias.module.ts` e `ferias.controller.ts`.
+- **Prompt 7:** *"Como o código da aplicação guarda os updates e o histórico de alterações no banco de dados sem sobrescrever?"*
+  - **Objetivo:** Revisar o funcionamento interno do bloco `this.prisma.$transaction` aliado ao `Optimistic Locking` (`version`) e à gravação paralela na tabela `historico_solicitacoes`.
 
-### Caso 5: Regra de Negócio de Cancelamento (Rollback de Saldo)
-- **Prompt Original / Sugestão da IA:** Inicialmente a IA implementou o cancelamento apenas alterando o status para `CANCELADO`.
-- **Falha/Problema Identificado:** O cancelamento de férias já aprovadas deixava o saldo de dias do colaborador indevidamente descontado, além de manter a cota de 20% da equipe travada.
-- **Refatoração Aplicada:** Ajuste no método `cancelar()` para verificar o `estadoAnterior`. Se a solicitação já estivesse em estado `APROVADO`, a transação ACID realiza o estorno automático dos dias devolvendo-os ao `saldoDias` do colaborador na tabela `funcionarios`, além de registrar o evento no log de auditoria.
+### Fase 4: Integração Frontend (Next.js) e Testes Ponta a Ponta
+- **Prompt 8:** *"Cadastra e faz tudo perfeitamente, qual o próximo passo para exibir as ações e o modal de auditoria?"*
+  - **Objetivo:** Implementar os botões de ação contextual (`Aprovar`, `Recusar`, `Cancelar Férias`) e o modal de visualização do Audit Log no frontend.
+- **Prompt 9:** *"Preciso atualizar meu api.ts e page.tsx para integrar com as rotas PATCH e exibir o histórico."*
+  - **Objetivo:** Tipar as requisições HTTP e tratar mensagens de exceção (`BadRequestException`) lançadas pelas guardas do backend.
+- **Prompt 10:** *"Validação completa dos fluxos: trava de 5 dias da CLT, ciclo SOLICITADO → APROVADO → CANCELADO no Audit Log com estorno de saldo e bloqueio da cota de 20% do setor."*
 
-### Caso 6: Integração da API ao Frontend (Next.js & API Client)
-- **Prompt Original / Sugestão da IA:** A IA gerou exemplos genéricos de formulário em React sem mapear as assinaturas corretas dos DTOs nem os corpos das requisições `PATCH`.
-- **Falha/Problema Identificado:** Erros de tipo no TypeScript ao chamar `aprovarFerias` e `rejeitarFerias` a partir da interface web, além da ausência do envio de justificativa e autor para o Audit Log.
-- **Refatoração Aplicada:** Atualização completa do módulo `@/lib/api.ts` e do componente `page.tsx`, adicionando o mapeamento das rotas `PATCH` (`/ferias/:id/aprovar`, `/ferias/:id/rejeitar`, `/ferias/:id/cancelar`), suporte ao envio de corpo JSON com `justificativa` e `motivoRecusa`, e renderização dinâmica do modal de **Histórico de Auditoria** para exibição em tempo real das transições.
+### Fase 5: Versionamento Git e Documentação de Entrega
+- **Prompt 11:** *"Como preparo esse meu arquivo para mandar para o professor? Lembro de ter algo de .gitignore, README.md com Mermaid e estrutura de commits."*
 
 ---
 
-## 3. Conclusão e Registro de Apoio
-A utilização da IA acelerou a estruturação do código base, mas exigiu **revisão crítica contínua** para garantir conformidade com os princípios SOLID, segurança transacional no PostgreSQL e alinhamento com todas as exigências do trabalho avaliativo.
+## 2. Análise Crítica e Refatorações de Código (IA vs. Implementação Final)
 
-O registro completo contendo as trocas de dados, transcrição detalhada de testes e diagramas de modelagem encontra-se exportado no arquivo de apoio `PPW2.pdf` na pasta `docs/`.
+Abaixo estão documentadas as situações em que a proposta inicial da IA apresentou falhas de arquitetura, segurança ou incompatibilidade com o ambiente real, exigindo revisão crítica e refatoração manual pelo aluno.
+
+### Caso 1: Incompatibilidade do Prisma Migrate com o PostgreSQL Compartilhado
+- **Proposta Inicial da IA:** Executar `npx prisma migrate dev --name update_schema_vacation_rules` ou `npx prisma db push --force-reset` para recriar as tabelas automaticamente.
+- **Problema Identificado pelo Aluno:** No servidor PostgreSQL compartilhado da faculdade, a conta do aluno (`bi3041557`) possui acesso restrito ao seu schema individual e não detém privilégios de `SUPERUSER` para criar bancos auxiliares (*shadow database*) ou executar resets destrutivos, resultando em erros de permissão (`permission denied`).
+- **Refatoração Aplicada:** Substituição da migração automática pela execução controlada de scripts DDL/DML diretamente via DBeaver com definição explícita de contexto (`SET search_path TO bi3041557;`), seguida de `npx prisma generate` para atualizar a tipagem local do Prisma Client sem violar permissões do servidor.
+
+### Caso 2: Acoplamento no Serviço Principal (Violação de SRP e OCP)
+- **Proposta Inicial da IA:** Na primeira versão gerada, todas as regras de validação (mínimo de 5 dias corridos da CLT, saldo disponível do colaborador e cálculo do limite de 20% de ausência simultânea no setor) estavam concentradas em blocos `if/else` dentro do `FeriasService`.
+- **Problema Identificado pelo Aluno:** Criação de uma *God Class* de difícil manutenção e testes. Qualquer nova regra solicitada pelo RH (como bloqueio de férias em meses de fechamento contábil) exigiria alterar diretamente o código principal da máquina de estados, violando o **Princípio Aberto/Fechado (OCP)** e o **Princípio da Responsabilidade Única (SRP)**.
+- **Refatoração Aplicada (Código Real):** Desacoplamento total por meio da interface `TransitionGuard` (**LSP**) e criação de classes especialistas na pasta `src/module/ferias/guards/`:
+
+```typescript
+// ❌ Abordagem Inicial da IA (Acoplada no Service - Descartada)
+if (dias < 5) throw new BadRequestException('Mínimo 5 dias');
+const ausentes = await this.prisma.solicitacaoFerias.count(...);
+if (ausentes >= limite) throw new BadRequestException('Limite atingido');
+
+// ✅ Arquitetura Final Refatorada (SOLID - src/module/ferias/guards/transition-guard.interface.ts)
+export interface TransitionGuard {
+  validate(
+    solicitacao: SolicitacaoFerias,
+    funcionario: Funcionario,
+    novasDatas?: { dataInicio: Date; diasSolicitados: number },
+  ): Promise<void>;
+}
+
+// Implementações isoladas registradas no FeriasModule:
+// 1. CltFractionGuard -> Valida fracionamento legal (>= 5 dias) e saldo suficiente
+// 2. TeamCapacityGuard -> Consulta contagem no setor e bloqueia acima de 20% simultâneo
+```
+
+### Caso 3: Vulnerabilidade a Race Conditions (Concorrência Simultânea)
+- **Proposta Inicial da IA:** As rotas de aprovação executavam atualizações simples filtrando apenas pela chave primária (`where: { id }`).
+- **Problema Identificado pelo Aluno:** Em um setor com 5 colaboradores ativos (onde o limite de 20% permite apenas 1 ausente), se dois gestores aprovassem pedidos diferentes no mesmo milissegundo, ambas as consultas leriam `ausentesAprovados = 0` antes do commit, aprovando duas solicitações e estourando a capacidade do setor para 40%.
+- **Refatoração Aplicada (Código Real):** Adição da coluna `version Int @default(0)` no modelo `SolicitacaoFerias` (`schema.prisma`) e aplicação de **Optimistic Locking** na query de atualização:
+
+```typescript
+// ✅ Controle de Concorrência (src/module/ferias/ferias.service.ts)
+const solicitacaoAtualizada = await tx.solicitacaoFerias.update({
+  where: { 
+    id: solicitacao.id, 
+    version: solicitacao.version // Bloqueia sobrescrita se outra transação alterou o registro antes
+  },
+  data: {
+    status: StatusFerias.APROVADO,
+    version: { increment: 1 },
+  },
+});
+```
+
+### Caso 4: Quebra de Atomicidade entre Mudança de Status e Audit Log
+- **Proposta Inicial da IA:** Executar `await this.prisma.solicitacaoFerias.update(...)` e, em uma instrução separada fora de transação, executar `await this.prisma.historicoSolicitacao.create(...)`.
+- **Problema Identificado pelo Aluno:** Quebra da propriedade de **Atomicidade (ACID)**. Se ocorresse uma falha de conexão ou erro de banco entre as duas instruções, o status mudaria para `APROVADO`, mas o registro na tabela `historico_solicitacoes` não seria criado, comprometendo a rastreabilidade.
+- **Refatoração Aplicada:** Encapsulamento obrigatório de todas as operações críticas dentro de `this.prisma.$transaction(async (tx) => { ... })`. Assim, a atualização do status, o incremento da versão, o desconto/estorno do saldo do colaborador e a gravação do log de auditoria ocorrem de forma atômica ("tudo ou nada").
+
+### Caso 5: Inconsistência de Saldo no Cancelamento de Férias Aprovadas
+- **Proposta Inicial da IA:** O endpoint `PATCH /ferias/:id/cancelar` apenas alterava o campo `status` para `CANCELADO`.
+- **Problema Identificado pelo Aluno:** Quando uma solicitação já aprovada era cancelada antes do início do gozo, os dias anteriormente deduzidos permaneciam descontados do colaborador.
+- **Refatoração Aplicada (Código Real):** Inclusão da regra de estorno automático dentro da transação de cancelamento:
+
+```typescript
+// ✅ Rollback de Domínio no Cancelamento (src/module/ferias/ferias.service.ts)
+if (estadoAnterior === StatusFerias.APROVADO) {
+  await tx.funcionario.update({
+    where: { id: solicitacao.funcionarioId },
+    data: {
+      saldoDias: solicitacao.funcionario.saldoDias + solicitacao.diasSolicitados,
+    },
+  });
+}
+```
+
+### Caso 6: Tipagem de Endpoints e Visualização do Audit Log no Frontend
+- **Proposta Inicial da IA:** Chamadas `fetch` diretas e genéricas dentro dos componentes React sem tipagem dos corpos das requisições `PATCH` nem exibição estruturada do histórico.
+- **Problema Identificado pelo Aluno:** Falta de padronização no envio de `justificativa` e `motivoRecusa` para o Audit Log e dificuldade para exibir ao usuário os alertas específicos lançados pelas guardas do NestJS.
+- **Refatoração Aplicada:** Centralização da camada de comunicação em `ppw_client/src/lib/api.ts` com funções tipadas (`aprovarFerias`, `rejeitarFerias`, `cancelarFerias`) capturando `errorData.message` da API, e implementação do modal de auditoria em `ppw_client/src/app/page.tsx` exibindo `estadoAnterior → novoEstado`, autor, justificativa e timestamp.
+
+---
+
+## 3. Matriz de Validação dos Requisitos (Testes Executados)
+
+Todos os fluxos foram validados em ambiente integrado (Next.js $\leftrightarrow$ NestJS $\leftrightarrow$ PostgreSQL `bi3041557`):
+
+| Cenário de Teste | Regra / Mecanismo Validado | Comportamento Observado | Status |
+| :--- | :--- | :--- | :---: |
+| Solicitar férias com menos de 5 dias | `CltFractionGuard` (SRP / LSP) | Backend rejeita com HTTP 400: *"Segundo a CLT, nenhum período de férias pode ser inferior a 5 dias corridos."* | ✅ Validado |
+| Aprovar solicitação de 17 dias | Transação ACID + Lock Otimista | Status alterado para `APROVADO`, saldo reduzido de 30 para 13 dias e `version` incrementada. | ✅ Validado |
+| Cancelar solicitação já aprovada | Estorno de Saldo + Audit Log | Status alterado para `CANCELADO`, saldo restaurado para 30 dias e transição `APROVADO → CANCELADO` registrada. | ✅ Validado |
+| 5 colaboradores no setor "Geral" | `TeamCapacityGuard` (Limite 20%) | 1ª aprovação efetivada (20%). 2ª aprovação na mesma janela de datas bloqueada pela guarda de capacidade. | ✅ Validado |
+| Auditoria de ciclo de vida | Tabela `historico_solicitacoes` | Modal exibe cronologia imutável com estado anterior, novo estado, autor, data/hora e justificativa. | ✅ Validado |
+
+---
+
+## 4. Documentação Complementar
+O histórico completo das interações e especificações técnicas detalhadas também está consolidado no documento `docs/PPW2.pdf` neste repositório.
