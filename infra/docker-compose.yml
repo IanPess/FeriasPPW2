@@ -1,0 +1,49 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: glitchtip
+      POSTGRES_USER: glitchtip
+      POSTGRES_PASSWORD: glitchtip_password
+    volumes:
+      - pg-data:/var/lib/postgresql/data
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+
+  web:
+    image: glitchtip/glitchtip:latest
+    depends_on:
+      - postgres
+      - redis
+    ports:
+      - "8000:8000"
+    environment:
+      DATABASE_URL: postgres://glitchtip:glitchtip_password@postgres:5432/glitchtip
+      REDIS_URL: redis://redis:6379/0
+      SECRET_KEY: chave-secreta-local-para-desenvolvimento-glitchtip
+      PORT: 8000
+      EMAIL_URL: consolemail://
+      GLITCHTIP_DOMAIN: http://localhost:8000
+      DEFAULT_FROM_EMAIL: admin@localhost
+      ENABLE_USER_REGISTRATION: "True"
+    restart: unless-stopped
+
+  worker:
+    image: glitchtip/glitchtip:latest
+    command: ./manage.py run_tasks
+    depends_on:
+      - postgres
+      - redis
+    environment:
+      DATABASE_URL: postgres://glitchtip:glitchtip_password@postgres:5432/glitchtip
+      REDIS_URL: redis://redis:6379/0
+      SECRET_KEY: chave-secreta-local-para-desenvolvimento-glitchtip
+      EMAIL_URL: consolemail://
+      GLITCHTIP_DOMAIN: http://localhost:8000
+    restart: unless-stopped
+
+volumes:
+  pg-data:
