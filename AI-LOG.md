@@ -5,11 +5,11 @@ if (ausentes >= limite) throw new BadRequestException('Limite atingido');
 
 // ✅ Arquitetura Final Refatorada (SOLID - src/module/ferias/guards/transition-guard.interface.ts)
 export interface TransitionGuard {
-  validate(
-    solicitacao: SolicitacaoFerias,
-    funcionario: Funcionario,
-    novasDatas?: { dataInicio: Date; diasSolicitados: number },
-  ): Promise<void>;
+validate(
+solicitacao: SolicitacaoFerias,
+funcionario: Funcionario,
+novasDatas?: { dataInicio: Date; diasSolicitados: number },
+): Promise<void>;
 }
 
 // Implementações isoladas registradas no FeriasModule:
@@ -17,22 +17,22 @@ export interface TransitionGuard {
 // 2. TeamCapacityGuard -> Consulta contagem no setor e bloqueia acima de 20% simultâneo
 Caso 3: Vulnerabilidade a Race Conditions (Concorrência Simultânea)Proposta Inicial da IA: As rotas de aprovação executavam atualizações simples filtrando apenas pela chave primária (where: { id }).Problema Identificado pelo Aluno: Em um setor com 5 colaboradores ativos (onde o limite de 20% permite apenas 1 ausente), se dois gestores aprovassem pedidos diferentes no mesmo milissegundo, ambas as consultas leriam ausentesAprovados = 0 antes do commit, aprovando duas solicitações e estourando a capacidade do setor para 40%.Refatoração Aplicada (Código Real): Adição da coluna version Int @default(0) no modelo SolicitacaoFerias (schema.prisma) e aplicação de Optimistic Locking na query de atualização:// ✅ Controle de Concorrência (src/module/ferias/ferias.service.ts)
 const solicitacaoAtualizada = await tx.solicitacaoFerias.update({
-  where: { 
-    id: solicitacao.id, 
-    version: solicitacao.version // Bloqueia sobrescrita se outra transação alterou o registro antes
-  },
-  data: {
-    status: StatusFerias.APROVADO,
-    version: { increment: 1 },
-  },
+where: { 
+id: solicitacao.id, 
+version: solicitacao.version // Bloqueia sobrescrita se outra transação alterou o registro antes
+},
+data: {
+status: StatusFerias.APROVADO,
+version: { increment: 1 },
+},
 });
 Caso 4: Quebra de Atomicidade entre Mudança de Status e Audit LogProposta Inicial da IA: Executar await this.prisma.solicitacaoFerias.update(...) e, em uma instrução separada fora de transação, executar await this.prisma.historicoSolicitacao.create(...).Problema Identificado pelo Aluno: Quebra da propriedade de Atomicidade (ACID). Se ocorresse uma falha de conexão ou erro de banco entre as duas instruções, o status mudaria para APROVADO, mas o registro na tabela historico_solicitacoes não seria criado, comprometendo a rastreabilidade.Refatoração Aplicada: Encapsulamento obrigatório de todas as operações críticas dentro de this.prisma.$transaction(async (tx) => { ... }). Assim, a atualização do status, o incremento da versão, o desconto/estorno do saldo do colaborador e a gravação do log de auditoria ocorrem de forma atômica ("tudo ou nada").Caso 5: Inconsistência de Saldo no Cancelamento de Férias AprovadasProposta Inicial da IA: O endpoint PATCH /ferias/:id/cancelar apenas alterava o campo status para CANCELADO.Problema Identificado pelo Aluno: Quando uma solicitação já aprovada era cancelada antes do início do gozo, os dias anteriormente deduzidos permaneciam descontados do colaborador.Refatoração Aplicada (Código Real): Inclusão da regra de estorno automático dentro da transação de cancelamento:// ✅ Rollback de Domínio no Cancelamento (src/module/ferias/ferias.service.ts)
 if (estadoAnterior === StatusFerias.APROVADO) {
-  await tx.funcionario.update({
-    where: { id: solicitacao.funcionarioId },
-    data: {
-      saldoDias: solicitacao.funcionario.saldoDias + solicitacao.diasSolicitados,
-    },
-  });
+await tx.funcionario.update({
+where: { id: solicitacao.funcionarioId },
+data: {
+saldoDias: solicitacao.funcionario.saldoDias + solicitacao.diasSolicitados,
+},
+});
 }
 Caso 6: Tipagem de Endpoints e Visualização do Audit Log no FrontendProposta Inicial da IA: Chamadas fetch diretas e genéricas dentro dos componentes React sem tipagem dos corpos das requisições PATCH nem exibição estruturada do histórico.Problema Identificado pelo Aluno: Falta de padronização no envio de justificativa e motivoRecusa para o Audit Log e dificuldade para exibir ao usuário os alertas específicos lançados pelas guardas do NestJS.Refatoração Aplicada: Centralização da camada de comunicação em ppw_client/src/lib/api.ts com funções tipadas (aprovarFerias, rejeitarFerias, cancelarFerias) capturando errorData.message da API, e implementação do modal de auditoria em ppw_client/src/app/page.tsx exibindo estadoAnterior → novoEstado, autor, justificativa e timestamp.Caso 7: Colisão de Portas e Estabilidade do Ambiente Docker no WSL2Proposta Inicial da IA: Subir o GlitchTip na porta padrão 8000 enquanto o backend NestJS (ppw_server) também utilizava a porta 8000, além de executar comandos Docker pontuais sem manter sessão ativa no WSL2.Problema Identificado pelo Aluno: Conflito de bind na porta 8000 (ERR_CONNECTION_REFUSED / Connection reset by peer) e suspensão automática do daemon Docker no WSL2 quando executado em ambiente com 8 GB de RAM.Refatoração Aplicada: Isolamento da infraestrutura em infra/docker-compose.yml na porta 8000 (subindo apenas os serviços essenciais web, postgres e redis), realocação da API NestJS para a porta 3001 e implementação de captura explícita de exceções via Sentry.captureException(error) dentro do useEffect de src/app/ticket/error.tsx para garantir que erros interceptados pelo React não fossem silenciados antes do envio ao GlitchTip.3. Matriz de Validação dos Requisitos (Testes Executados)Todos os fluxos foram validados em ambiente integrado (Next.js $\leftrightarrow$ NestJS $\leftrightarrow$ PostgreSQL bi3041557 e GlitchTip):Cenário de TesteRegra / Mecanismo ValidadoComportamento ObservadoStatusSolicitar férias com menos de 5 diasCltFractionGuard (SRP / LSP)Backend rejeita com HTTP 400: "Segundo a CLT, nenhum período de férias pode ser inferior a 5 dias corridos."✅ ValidadoAprovar solicitação de 17 diasTransação ACID + Lock OtimistaStatus alterado para APROVADO, saldo reduzido de 30 para 13 dias e version incrementada.✅ ValidadoCancelar solicitação já aprovadaEstorno de Saldo + Audit LogStatus alterado para CANCELADO, saldo restaurado para 30 dias e transição APROVADO → CANCELADO registrada.✅ Validado5 colaboradores no setor "Geral"TeamCapacityGuard (Limite 20%)1ª aprovação efetivada (20%). 2ª aprovação na mesma janela de datas bloqueada pela guarda de capacidade.✅ ValidadoAuditoria de ciclo de vidaTabela historico_solicitacoesModal exibe cronologia imutável com estado anterior, novo estado, autor, data/hora e justificativa.✅ ValidadoErro de renderização client-side (/ticket/teste-erros)Error Boundary (error.tsx) + reset()Interface exibe cartão amigável ("Falha ao processar solicitação do ticket") e restaura o componente sem recarregar a página (docs/print1.png).✅ ValidadoFalha assíncrona em Server Component e regra de negócioSDK @sentry/nextjs + GlitchTip (Docker)Exceções capturadas e listadas na aba Issues (localhost:8000/ifsp-tsi/issues) com stack trace completo (docs/print2.png).✅ Validado4. Documentação ComplementarO histórico completo das interações, especificações técnicas detalhadas e evidências visuais estão consolidados neste repositório nas pastas docs/ (PPW2.pdf, print1.png, print2.png) e infra/ (docker-compose.yml).
