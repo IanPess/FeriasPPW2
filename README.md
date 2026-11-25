@@ -1,93 +1,91 @@
-Sistema de Gestão de Férias (Tema 17)
+# Sistema de Gestão de Férias (Tema 17)
 
 Plataforma corporativa de RH desenvolvida com NestJS/Prisma (Backend) e Next.js/TailwindCSS (Frontend).
 
-📊 Diagrama Entidade-Relacionamento (DER)
+## 📊 Diagrama Entidade-Relacionamento (DER)
 
+```mermaid
 erDiagram
-FUNCIONARIOS ||--o{ SOLICITACOES_FERIAS : solicita
-FUNCIONARIOS ||--o{ HISTORICO_SOLICITACOES : executa
-SOLICITACOES_FERIAS ||--o{ HISTORICO_SOLICITACOES : possui
+    FUNCIONARIOS ||--o{ SOLICITACOES_FERIAS : solicita
+    FUNCIONARIOS ||--o{ HISTORICO_SOLICITACOES : executa
+    SOLICITACOES_FERIAS ||--o{ HISTORICO_SOLICITACOES : possui
 
-FUNCIONARIOS {
-string id PK
-string nome
-string email UK
-string cargo
-Role role
-string setor
-datetime data_admissao
-int saldo_dias
-StatusFuncionario status
-string gestor_id FK
-}
+    FUNCIONARIOS {
+        string id PK
+        string nome
+        string email UK
+        string cargo
+        Role role
+        string setor
+        datetime data_admissao
+        int saldo_dias
+        StatusFuncionario status
+        string gestor_id FK
+    }
 
-SOLICITACOES_FERIAS {
-string id PK
-string funcionario_id FK
-datetime data_inicio
-int dias_solicitados
-boolean abono_pecuniario
-StatusFerias status
-string motivo_recusa
-int version
-}
+    SOLICITACOES_FERIAS {
+        string id PK
+        string funcionario_id FK
+        datetime data_inicio
+        int dias_solicitados
+        boolean abono_pecuniario
+        StatusFerias status
+        string motivo_recusa
+        int version
+    }
 
-HISTORICO_SOLICITACOES {
-string id PK
-string solicitacao_id FK
-StatusFerias estado_anterior
-StatusFerias novo_estado
-string autor_id FK
-string justificativa
-datetime timestamp
-}
+    HISTORICO_SOLICITACOES {
+        string id PK
+        string solicitacao_id FK
+        StatusFerias estado_anterior
+        StatusFerias novo_estado
+        string autor_id FK
+        string justificativa
+        datetime timestamp
+    }
+```
 
+## 🔄 Diagrama de Estados (Máquina de Estados)
 
-🔄 Diagrama de Estados (Máquina de Estados)
-
+```mermaid
 stateDiagram-v2
-[*] --> RASCUNHO
-RASCUNHO --> SOLICITADO: Enviar Solicitação
-SOLICITADO --> EM_ANALISE: Iniciar Análise
-EM_ANALISE --> APROVADO: Guardas Válidas (CLT / 20% Setor)
-EM_ANALISE --> RECUSADO: Limite Excedido ou Negado
-SOLICITADO --> APROVADO: Aprovação Direta
-SOLICITADO --> RECUSADO: Recusa Direta
-APROVADO --> CANCELADO: Cancelar (Restaura Saldo)
-RECUSADO --> [*]
-CANCELADO --> [*]
+    [*] --> RASCUNHO
+    RASCUNHO --> SOLICITADO: Enviar Solicitação
+    SOLICITADO --> EM_ANALISE: Iniciar Análise
+    EM_ANALISE --> APROVADO: Guardas Válidas (CLT / 20% Setor)
+    EM_ANALISE --> RECUSADO: Limite Excedido ou Negado
+    SOLICITADO --> APROVADO: Aprovação Direta
+    SOLICITADO --> RECUSADO: Recusa Direta
+    APROVADO --> CANCELADO: Cancelar (Restaura Saldo)
+    RECUSADO --> [*]
+    CANCELADO --> [*]
+```
 
+## 🚀 Como Executar o Ambiente Locally
 
-🚀 Como Executar o Ambiente Locally
-
-Backend (NestJS)
-
+### Backend (NestJS)
+```bash
 cd ppw_server
 npm install
 npx prisma generate
 npm run start:dev
+```
+*(Nota: mantenha o `ppw_server` configurado na porta `3001` para evitar conflito com a porta `8000` utilizada pelo GlitchTip).*
 
-
-(Nota: mantenha o ppw_server configurado na porta 3001 para evitar conflito com a porta 8000 utilizada pelo GlitchTip).
-
-Frontend (Next.js)
-
+### Frontend (Next.js)
+```bash
 cd ppw_client
 npm install
 npm run dev
+```
 
-
-Observabilidade e Resiliência Visual (GlitchTip + Docker)
-
+### Observabilidade e Resiliência Visual (GlitchTip + Docker)
+```bash
 cd infra
 docker compose up -d
+```
+Após iniciar o contêiner na porta `8000`, acesse `http://localhost:8000`, entre no projeto e copie a **DSN**. Configure a variável `NEXT_PUBLIC_SENTRY_DSN` no arquivo `ppw_client/.env.local` e acesse `http://localhost:3000/ticket/teste-erros` para validar os *Error Boundaries* (`src/app/ticket/error.tsx` e `src/app/global-error.tsx`) e o envio de telemetria para o painel de *Issues*.
 
-
-Após iniciar o contêiner na porta 8000, acesse http://localhost:8000, entre no projeto e copie a DSN. Configure a variável NEXT_PUBLIC_SENTRY_DSN no arquivo ppw_client/.env.local e acesse http://localhost:3000/ticket/teste-erros para validar os Error Boundaries (src/app/ticket/error.tsx e src/app/global-error.tsx) e o envio de telemetria para o painel de Issues.
-
-🛡️ Evidências de Resiliência e Monitoramento
-
-docs/print1.png — Interface de fallback amigável do Error Boundary (error.tsx) com opção de recuperação via reset().
-
-docs/print2.png — Painel Issues do GlitchTip registrando as exceções capturadas em tempo real.
+## 🛡️ Evidências de Resiliência e Monitoramento
+* [`docs/print1.png`](./docs/print1.png) — Interface de fallback amigável do *Error Boundary* (`error.tsx`) com opção de recuperação via `reset()`.
+* [`docs/print2.png`](./docs/print2.png) — Painel *Issues* do GlitchTip registrando as exceções capturadas em tempo real.
