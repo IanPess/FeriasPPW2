@@ -132,6 +132,9 @@ export class FeriasService {
         where: { id, version: solicitacao.version },
         data: {
           status: StatusFerias.RECUSADO,
+          //if (!motivoRecusa || motivoRecusa.trim() === '') {
+  //throw new BadRequestException('É obrigatório informar o motivo da recusa.');
+//}
           motivoRecusa: motivoRecusa || 'Solicitação recusada pela gestão.',
           version: { increment: 1 },
         },
